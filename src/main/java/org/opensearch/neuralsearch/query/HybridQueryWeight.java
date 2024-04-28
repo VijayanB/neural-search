@@ -6,8 +6,14 @@ package org.opensearch.neuralsearch.query;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
@@ -32,6 +38,7 @@ public final class HybridQueryWeight extends Weight {
     private final List<Weight> weights;
 
     private final ScoreMode scoreMode;
+    private final ExecutorService executorService;
 
     /**
      * Construct the Weight for this Query searched by searcher. Recursively construct subquery weights.
@@ -45,6 +52,7 @@ public final class HybridQueryWeight extends Weight {
                 throw new RuntimeException(e);
             }
         }).collect(Collectors.toList());
+        executorService = Executors.newFixedThreadPool(weights.size());
         this.scoreMode = scoreMode;
     }
 
@@ -70,15 +78,31 @@ public final class HybridQueryWeight extends Weight {
 
     @Override
     public ScorerSupplier scorerSupplier(LeafReaderContext context) throws IOException {
-        List<ScorerSupplier> scorerSuppliers = new ArrayList<>();
+        List<ScorerSupplier> scorerSuppliers = Collections.synchronizedList(new ArrayList<>());
+        List<Callable<ScorerSupplier>> tasks = new ArrayList<>();
+        // for (Weight w : weights) {
+        // ScorerSupplier ss = w.scorerSupplier(context);
+        // scorerSuppliers.add(ss);
+        // }
         for (Weight w : weights) {
-            ScorerSupplier ss = w.scorerSupplier(context);
-            scorerSuppliers.add(ss);
+            tasks.add(() -> w.scorerSupplier(context));
         }
 
+        try {
+            List<Future<ScorerSupplier>> futures = executorService.invokeAll(tasks);
+            // Gather the results from the tasks
+            for (Future<ScorerSupplier> future : futures) {
+                scorerSuppliers.add(future.get());
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
         if (scorerSuppliers.isEmpty()) {
             return null;
         }
+        executorService.shutdown();
         return new HybridScorerSupplier(scorerSuppliers, this, scoreMode);
     }
 
