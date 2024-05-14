@@ -5,12 +5,15 @@
 package org.opensearch.neuralsearch.query;
 
 import java.io.IOException;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -20,6 +23,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryVisitor;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Weight;
+import org.opensearch.neuralsearch.query.executor.HybridQueryExecutor;
 
 /**
  * Implementation of Query interface for type "hybrid". It allows execution of multiple sub-queries and collect individual
@@ -100,6 +104,29 @@ public final class HybridQuery extends Query implements Iterable<Query> {
      * @return
      * @throws IOException
      */
+    // @Override
+    // public Query rewrite(IndexSearcher indexSearcher) throws IOException {
+    // if (subQueries.isEmpty()) {
+    // return new MatchNoDocsQuery("empty HybridQuery");
+    // }
+    //
+    // boolean actuallyRewritten = false;
+    // List<Query> rewrittenSubQueries = new ArrayList<>();
+    // for (Query subQuery : subQueries) {
+    // Query rewrittenSub = subQuery.rewrite(indexSearcher);
+    // /* we keep rewrite sub-query unless it's not equal to itself, it may take multiple levels of recursive calls
+    // queries need to be rewritten from high-level clauses into lower-level clauses because low-level clauses
+    // perform better. For hybrid query we need to track progress of re-write for all sub-queries */
+    // actuallyRewritten |= rewrittenSub != subQuery;
+    // rewrittenSubQueries.add(rewrittenSub);
+    // }
+    //
+    // if (actuallyRewritten) {
+    // return new HybridQuery(rewrittenSubQueries);
+    // }
+    //
+    // return super.rewrite(indexSearcher);
+    // }
     @Override
     public Query rewrite(IndexSearcher indexSearcher) throws IOException {
         if (subQueries.isEmpty()) {
@@ -107,14 +134,21 @@ public final class HybridQuery extends Query implements Iterable<Query> {
         }
 
         boolean actuallyRewritten = false;
-        List<Query> rewrittenSubQueries = new ArrayList<>();
+        List<Callable<Map.Entry<Query, Boolean>>> rewriteSubQueryTasks = new ArrayList<>();
         for (Query subQuery : subQueries) {
-            Query rewrittenSub = subQuery.rewrite(indexSearcher);
-            /* we keep rewrite sub-query unless it's not equal to itself, it may take multiple levels of recursive calls
-               queries need to be rewritten from high-level clauses into lower-level clauses because low-level clauses
-               perform better. For hybrid query we need to track progress of re-write for all sub-queries */
-            actuallyRewritten |= rewrittenSub != subQuery;
-            rewrittenSubQueries.add(rewrittenSub);
+            rewriteSubQueryTasks.add(() -> {
+                Query rewrittenQuery = subQuery.rewrite(indexSearcher);
+                boolean isRewrite = rewrittenQuery != subQuery;
+                return new AbstractMap.SimpleImmutableEntry<>(rewrittenQuery, isRewrite);
+            });
+        }
+        List<Query> rewrittenSubQueries = new ArrayList<>();
+        final Map.Entry<Query, Boolean>[] objects = HybridQueryExecutor.getExecutor()
+            .invokeAll(rewriteSubQueryTasks)
+            .toArray(Map.Entry[]::new);
+        for (Map.Entry<Query, Boolean> object : objects) {
+            actuallyRewritten |= object.getValue();
+            rewrittenSubQueries.add(object.getKey());
         }
 
         if (actuallyRewritten) {

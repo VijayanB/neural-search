@@ -18,6 +18,7 @@ import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
@@ -47,6 +48,7 @@ import org.opensearch.neuralsearch.processor.rerank.RerankProcessor;
 import org.opensearch.neuralsearch.query.HybridQueryBuilder;
 import org.opensearch.neuralsearch.query.NeuralQueryBuilder;
 import org.opensearch.neuralsearch.query.NeuralSparseQueryBuilder;
+import org.opensearch.neuralsearch.query.executor.HybridQueryExecutor;
 import org.opensearch.neuralsearch.query.ext.RerankSearchExtBuilder;
 import org.opensearch.neuralsearch.search.query.HybridQueryPhaseSearcher;
 import org.opensearch.neuralsearch.util.NeuralSearchClusterUtil;
@@ -62,6 +64,7 @@ import org.opensearch.search.pipeline.SearchPhaseResultsProcessor;
 import org.opensearch.search.pipeline.SearchRequestProcessor;
 import org.opensearch.search.pipeline.SearchResponseProcessor;
 import org.opensearch.search.query.QueryPhaseSearcher;
+import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.watcher.ResourceWatcherService;
 
@@ -95,6 +98,7 @@ public class NeuralSearch extends Plugin implements ActionPlugin, SearchPlugin, 
         NeuralQueryBuilder.initialize(clientAccessor);
         NeuralSparseQueryBuilder.initialize(clientAccessor);
         normalizationProcessorWorkflow = new NormalizationProcessorWorkflow(new ScoreNormalizer(), new ScoreCombiner());
+        HybridQueryExecutor.initialize(threadPool);
         return List.of(clientAccessor);
     }
 
@@ -125,6 +129,11 @@ public class NeuralSearch extends Plugin implements ActionPlugin, SearchPlugin, 
                 parameters.analysisRegistry
             )
         );
+    }
+
+    @Override
+    public List<ExecutorBuilder<?>> getExecutorBuilders(Settings settings) {
+        return List.of(HybridQueryExecutor.getExecutorBuilder(settings));
     }
 
     @Override

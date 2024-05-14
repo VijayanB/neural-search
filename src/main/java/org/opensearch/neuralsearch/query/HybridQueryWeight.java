@@ -10,10 +10,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import lombok.RequiredArgsConstructor;
@@ -26,6 +22,7 @@ import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.ScorerSupplier;
 import org.apache.lucene.search.Weight;
+import org.opensearch.neuralsearch.query.executor.HybridQueryExecutor;
 
 import static org.opensearch.neuralsearch.query.HybridQueryBuilder.MAX_NUMBER_OF_SUB_QUERIES;
 
@@ -38,7 +35,6 @@ public final class HybridQueryWeight extends Weight {
     private final List<Weight> weights;
 
     private final ScoreMode scoreMode;
-    private final ExecutorService executorService;
 
     /**
      * Construct the Weight for this Query searched by searcher. Recursively construct subquery weights.
@@ -52,7 +48,6 @@ public final class HybridQueryWeight extends Weight {
                 throw new RuntimeException(e);
             }
         }).collect(Collectors.toList());
-        executorService = Executors.newFixedThreadPool(weights.size());
         this.scoreMode = scoreMode;
     }
 
@@ -78,32 +73,40 @@ public final class HybridQueryWeight extends Weight {
 
     @Override
     public ScorerSupplier scorerSupplier(LeafReaderContext context) throws IOException {
-        List<ScorerSupplier> scorerSuppliers = Collections.synchronizedList(new ArrayList<>());
-        List<Callable<ScorerSupplier>> tasks = new ArrayList<>();
-        // for (Weight w : weights) {
-        // ScorerSupplier ss = w.scorerSupplier(context);
-        // scorerSuppliers.add(ss);
-        // }
-        for (Weight w : weights) {
-            tasks.add(() -> w.scorerSupplier(context));
+        List<Callable<Void>> scoreSupplierTasks = new ArrayList<>();
+        final List<ScorerSupplier> scorerSuppliers = Collections.synchronizedList(
+            new ArrayList<>(Collections.nCopies(weights.size(), null))
+        );
+        ScoreSupplierCollectorManager manager = new ScoreSupplierCollectorManager(context);
+        for (int i = 0; i < weights.size(); i++) {
+            final int index = i;
+            scoreSupplierTasks.add(() -> {
+                try {
+                    addScoreSupplier(manager, scorerSuppliers, weights.get(index), index);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return null;
+            });
         }
-
-        try {
-            List<Future<ScorerSupplier>> futures = executorService.invokeAll(tasks);
-            // Gather the results from the tasks
-            for (Future<ScorerSupplier> future : futures) {
-                scorerSuppliers.add(future.get());
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e);
-        }
+        HybridQueryExecutor.getExecutor().invokeAll(scoreSupplierTasks);
         if (scorerSuppliers.isEmpty()) {
             return null;
         }
-        executorService.shutdown();
         return new HybridScorerSupplier(scorerSuppliers, this, scoreMode);
+    }
+
+    private void addScoreSupplier(ScoreSupplierCollectorManager manager, List<ScorerSupplier> scorerSuppliers, Weight weight, int index)
+        throws Exception {
+        final HybridQueryExecutorCollector<ScorerSupplier, LeafReaderContext> scorerSupplierHybridQueryExecutorCollector = manager
+            .newCollector(scorerSuppliers);
+        scorerSupplierHybridQueryExecutorCollector.collect(index, leafReaderContext -> {
+            try {
+                return weight.scorerSupplier(leafReaderContext);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     /**

@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 
 import lombok.extern.log4j.Log4j2;
 import org.apache.lucene.search.DisiPriorityQueue;
@@ -24,6 +25,7 @@ import org.apache.lucene.search.Weight;
 
 import lombok.Getter;
 import org.apache.lucene.util.PriorityQueue;
+import org.opensearch.neuralsearch.query.executor.HybridQueryExecutor;
 import org.opensearch.neuralsearch.search.HybridDisiWrapper;
 
 /**
@@ -204,6 +206,8 @@ public final class HybridQueryScorer extends Scorer {
                 "Unable to collect scores for one of the sub-queries, encountered an unexpected type of score iterator."
             );
         }
+        List<Callable<Void>> disiWrapperTasks = new ArrayList<>();
+        List<HybridDisiWrapper> matchedScorer = new ArrayList<>();
         for (HybridDisiWrapper disiWrapper = (HybridDisiWrapper) topList; disiWrapper != null; disiWrapper =
             (HybridDisiWrapper) disiWrapper.next) {
             // check if this doc has match in the subQuery. If not, add score as 0.0 and continue
@@ -211,9 +215,19 @@ public final class HybridQueryScorer extends Scorer {
             if (scorer.docID() == DocIdSetIterator.NO_MORE_DOCS) {
                 continue;
             }
-            scores[disiWrapper.getSubQueryIndex()] = scorer.score();
+            matchedScorer.add(disiWrapper);
         }
+        if (matchedScorer.size() == 1) {
+            scores[matchedScorer.get(0).getSubQueryIndex()] = matchedScorer.get(0).scorer.score();
+            return scores;
+        }
+        matchedScorer.stream().forEach(hybridDisiWrapper -> disiWrapperTasks.add(() -> {
+            scores[hybridDisiWrapper.getSubQueryIndex()] = hybridDisiWrapper.scorer.score();
+            return null;
+        }));
+        HybridQueryExecutor.getExecutor().invokeAll(disiWrapperTasks);
         return scores;
+
     }
 
     private DisiPriorityQueue initializeSubScorersPQ() {
