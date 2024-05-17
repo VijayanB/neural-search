@@ -209,9 +209,9 @@ public final class HybridQueryScorer extends Scorer {
                 "Unable to collect scores for one of the sub-queries, encountered an unexpected type of score iterator."
             );
         }
-        HybridQueryScoresCollectionManager manager = new HybridQueryScoresCollectionManager();
-        List<Callable<Void>> scoreTasks = new ArrayList<>();
-        List<HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>>> collectors = new ArrayList<>();
+        final HybridQueryScoresCollectionManager manager = new HybridQueryScoresCollectionManager();
+        final List<Callable<Void>> scoreTasks = new ArrayList<>();
+        final List<HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>>> collectors = new ArrayList<>();
 
         for (HybridDisiWrapper disiWrapper = (HybridDisiWrapper) topList; disiWrapper != null; disiWrapper =
             (HybridDisiWrapper) disiWrapper.next) {
@@ -220,7 +220,7 @@ public final class HybridQueryScorer extends Scorer {
             if (scorer.docID() == DocIdSetIterator.NO_MORE_DOCS) {
                 continue;
             }
-            HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>> collector = manager.newCollector();
+            final HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>> collector = manager.newCollector();
             collectors.add(collector);
             final Integer index = disiWrapper.getSubQueryIndex();
             scoreTasks.add(() -> score(scorer, index, collector));
