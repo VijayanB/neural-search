@@ -5,13 +5,11 @@
 package org.opensearch.neuralsearch.query;
 
 import java.io.IOException;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
@@ -29,6 +27,7 @@ import lombok.Getter;
 import org.apache.lucene.util.PriorityQueue;
 import org.opensearch.neuralsearch.executors.HybridQueryExecutor;
 import org.opensearch.neuralsearch.executors.HybridQueryExecutorCollector;
+import org.opensearch.neuralsearch.query.HybridQueryScoresCollectionManager.ScoreWrapperFromCollector;
 import org.opensearch.neuralsearch.search.HybridDisiWrapper;
 
 /**
@@ -211,7 +210,7 @@ public final class HybridQueryScorer extends Scorer {
         }
         final HybridQueryScoresCollectionManager manager = new HybridQueryScoresCollectionManager();
         final List<Callable<Void>> scoreTasks = new ArrayList<>();
-        final List<HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>>> collectors = new ArrayList<>();
+        final List<HybridQueryExecutorCollector<?, ScoreWrapperFromCollector>> collectors = new ArrayList<>();
 
         for (HybridDisiWrapper disiWrapper = (HybridDisiWrapper) topList; disiWrapper != null; disiWrapper =
             (HybridDisiWrapper) disiWrapper.next) {
@@ -220,9 +219,9 @@ public final class HybridQueryScorer extends Scorer {
             if (scorer.docID() == DocIdSetIterator.NO_MORE_DOCS) {
                 continue;
             }
-            final HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>> collector = manager.newCollector();
+            final HybridQueryExecutorCollector<?, ScoreWrapperFromCollector> collector = manager.newCollector();
             collectors.add(collector);
-            final Integer index = disiWrapper.getSubQueryIndex();
+            final int index = disiWrapper.getSubQueryIndex();
             scoreTasks.add(() -> score(scorer, index, collector));
         }
         HybridQueryExecutor.getExecutor().invokeAll(scoreTasks);
@@ -230,10 +229,10 @@ public final class HybridQueryScorer extends Scorer {
         return scores;
     }
 
-    private Void score(Scorer scorer, Integer index, HybridQueryExecutorCollector<?, Map.Entry<Integer, Float>> collector) {
+    private Void score(Scorer scorer, int index, HybridQueryExecutorCollector<?, ScoreWrapperFromCollector> collector) {
         collector.collect(unUsed -> {
             try {
-                return new AbstractMap.SimpleEntry(index, scorer.score());
+                return ScoreWrapperFromCollector.of(index, scorer.score());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
