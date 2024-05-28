@@ -22,7 +22,6 @@ import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.ScorerSupplier;
 import org.apache.lucene.search.Weight;
 import org.opensearch.neuralsearch.executors.HybridQueryExecutor;
-import org.opensearch.neuralsearch.executors.HybridQueryExecutorCollector;
 
 import static org.opensearch.neuralsearch.query.HybridQueryBuilder.MAX_NUMBER_OF_SUB_QUERIES;
 

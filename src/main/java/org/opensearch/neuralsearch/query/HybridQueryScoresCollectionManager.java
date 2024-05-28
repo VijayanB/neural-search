@@ -6,8 +6,6 @@ package org.opensearch.neuralsearch.query;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.opensearch.neuralsearch.executors.HybridQueryExecutorCollector;
-import org.opensearch.neuralsearch.executors.HybridQueryExecutorCollectorManager;
 
 import java.util.List;
 import java.util.Optional;

@@ -2,7 +2,9 @@
  * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
-package org.opensearch.neuralsearch.executors;
+package org.opensearch.neuralsearch.query;
+
+import org.opensearch.neuralsearch.executors.HybridQueryExecutor;
 
 /**
  * {@link HybridQueryExecutorCollectorManager} is responsible for creating new {@link HybridQueryExecutorCollector} instances
